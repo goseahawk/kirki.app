@@ -11,6 +11,10 @@
 #   - a Retina screen gets 200%, as the app says, so the window is readable and sharp
 DONE=/var/lib/kirkus/setup-done
 HOST=/run/kirki/host.env
+LOG=/var/log/kirk-setup.log
+# Everything also goes to a file of its own: started with runuser -l, this runs in a login session,
+# so the journal files it under that session rather than kirk-setup.service.
+exec > >(tee -a "$LOG") 2>&1
 trap 'killall -9 cage calamares 2>/dev/null || true' EXIT INT TERM
 
 host() { sed -n "s/^$1=//p" "$HOST" 2>/dev/null | head -1; }
@@ -82,8 +86,10 @@ export WLR_RENDERER_ALLOW_SOFTWARE=1
 # three times; if setup still isn't done, it's shown again at the next start.
 for attempt in 1 2 3; do
   cage -s -- calamares -D6 -c "$CONF"
+  rc=$?
   [[ -e $DONE ]] && { echo "Setup complete."; exit 0; }
-  echo "Setup window closed before setup was finished (attempt $attempt)."
+  echo "Setup window closed before setup was finished (attempt $attempt, exit $rc). Calamares said:"
+  tail -n 40 "$HOME/.cache/calamares/session.log" 2>/dev/null
   sleep 2
 done
 echo "Setup was not completed; it starts again at the next start."

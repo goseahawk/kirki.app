@@ -101,7 +101,8 @@ journal() {
   local unit=$1 l
   if [[ $unit =~ ^kirk-[a-z0-9-]+$ ]]; then
     while IFS= read -r l; do send "log $unit: ${l:0:300}"; done \
-      < <(journalctl -b -u "$unit.service" -n 80 --no-pager -o cat 2>&1)
+      < <(journalctl -b -u "$unit.service" -n 80 --no-pager -o cat 2>&1
+          [[ -r /var/log/$unit.log ]] && tail -n 120 "/var/log/$unit.log")
   fi
   send "log-end"
 }
