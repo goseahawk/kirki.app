@@ -1,0 +1,228 @@
+# Builds everything a kirki for Mac release has, and (optionally) publishes it:
+#   - kirki's disk image, on GitHub's ARM servers, tested by starting it in QEMU
+#   - the kirki app, on GitHub's Apple silicon Macs
+#   - install.sh, the command people run in Terminal
+# Run it from the Actions tab: "Release" -> "Run workflow".
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, YY.MM.DD (leave empty for today's date; a second release the same day becomes YY.MM.DD.1)"
+        required: false
+        default: ""
+      publish:
+        description: "What to do with it"
+        type: choice
+        default: "Just build (download it from this run)"
+        options:
+          - "Just build (download it from this run)"
+          - "Draft release (test it first, publish it yourself)"
+          - "Publish release"
+      image:
+        description: "kirki's disk image"
+        type: choice
+        default: "Build a new one"
+        options:
+          - "Build a new one"
+          - "Keep the latest release's (only the app changed)"
+      test:
+        description: "Start the new image in QEMU to test it"
+        type: boolean
+        default: true
+      notes:
+        description: "Release notes (optional)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write          # to create the tag and the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  TZ: America/New_York     # "today's date" for the version
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          exists() { gh release view "$1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; }
+          v="$INPUT_VERSION"
+          if [[ -z $v ]]; then
+            v=$(date +%y.%m.%d); n=0
+            while [[ $PUBLISH != Just* ]] && exists "$v"; do n=$((n + 1)); v="$(date +%y.%m.%d).$n"; done
+          fi
+          if ! [[ $v =~ ^[0-9]{2}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?$ ]]; then
+            echo "::error::Version must look like 26.11.26, got '$v'"; exit 1
+          fi
+          if [[ $PUBLISH != Just* ]] && exists "$v"; then
+            echo "::error::A release called $v already exists. Delete it first, or enter a different version."; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "kirki for Mac $v"
+
+  image:
+    needs: version
+    if: ${{ startsWith(inputs.image, 'Build') }}
+    runs-on: ubuntu-24.04-arm      # 64-bit ARM, so nothing is emulated while building
+    timeout-minutes: 300
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make room and install the build tools
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache || true
+          sudo apt-get update -q
+          sudo apt-get install -y -q libarchive-tools arch-install-scripts btrfs-progs dosfstools fdisk rsync xz-utils \
+            qemu-system-arm qemu-utils qemu-efi-aarch64
+          df -h /
+          ls -l /dev/kvm 2>/dev/null || echo "(no KVM here: the test starts kirki emulated, which is slow)"
+
+      - name: Build the image (takes 30-90 minutes)
+        run: sudo env KIRK_VERSION="$VERSION" KIRK_REPO="$GITHUB_REPOSITORY" KIRK_KEEP_RAW=yes image/build.sh
+
+      - name: Start it in QEMU and check it
+        if: ${{ inputs.test }}
+        run: |
+          sudo chmod 666 /dev/kvm 2>/dev/null || true
+          sudo chown -R "$(id -u)" out
+          python3 image/test-boot.py "out/kirki-vm-$VERSION.img" test-results
+
+      - name: Keep the test's screenshots and logs
+        if: ${{ always() && inputs.test }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-test
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Package
+        run: |
+          sudo chown -R "$(id -u)" out
+          rm -f "out/kirki-vm-$VERSION.img"
+          ls -l out
+          cat out/kirki-vm.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: out/*
+          retention-days: 7
+          compression-level: 0
+
+  app:
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        run: swift test --package-path app
+
+      # Optional: sign with a Developer ID and notarize, so the app also opens without a warning when
+      # downloaded with a browser. Needs these repository secrets (see DEVELOPMENT.md):
+      # MACOS_CERTIFICATE_P12 (base64), MACOS_CERTIFICATE_PASSWORD, MACOS_SIGN_IDENTITY,
+      # NOTARY_APPLE_ID, NOTARY_TEAM_ID, NOTARY_PASSWORD. Without them the app is signed ad hoc.
+      - name: Signing certificate
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          if [ -z "$P12" ]; then echo "No certificate: the app is signed ad hoc."; exit 0; fi
+          kc=$RUNNER_TEMP/signing.keychain-db
+          security create-keychain -p ci "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p ci "$kc"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$kc"
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          echo "KIRK_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build kirki.app
+        run: KIRK_VERSION="$VERSION" app/build-app.sh
+
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: |
+          if [ -z "${KIRK_SIGN_IDENTITY:-}" ] || [ -z "$APPLE_ID" ]; then echo "Not notarized."; exit 0; fi
+          xcrun notarytool submit out/kirki-app.zip --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$PASSWORD" --wait
+          xcrun stapler staple out/kirki.app
+          rm out/kirki-app.zip out/kirki-app.zip.sha256
+          (cd out && ditto -c -k --keepParent kirki.app kirki-app.zip && shasum -a 256 kirki-app.zip > kirki-app.zip.sha256)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: out/kirki-app.zip*
+          retention-days: 7
+
+  publish:
+    needs: [version, image, app]
+    if: ${{ !cancelled() && !failure() && !startsWith(inputs.publish, 'Just') }}
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Gather the release files
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          mkdir -p out
+          cp install.sh out/
+          cp artifacts/app/* out/
+          if [[ $IMAGE == Build* ]]; then
+            cp artifacts/image/* out/
+          else
+            # the latest release's image, as it is: its kirki-vm.json still links to that release's files
+            gh release download --repo "$GITHUB_REPOSITORY" --pattern kirki-vm.json --dir out \
+              || { echo "::error::The latest release has no kirki-vm.json to keep. Build a new image."; exit 1; }
+          fi
+          python3 -c "import json; m = json.load(open('out/kirki-vm.json')); print('image', m['version'], [p['url'] for p in m['image']['parts']])"
+          ls -l out
+
+      - name: Create the release
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          body="${NOTES:-kirki for Mac $VERSION}
+
+          **Install:** on a Mac with Apple silicon (M1 or later) and macOS 14 or later, open Terminal and run:
+
+              curl -fsSL https://github.com/$GITHUB_REPOSITORY/releases/latest/download/install.sh | sh
+
+          Already using kirki? Run the same command to update the app. kirki itself updates on its own."
+          draft=()
+          [[ $PUBLISH == Draft* ]] && draft=(--draft)
+          gh release create "$VERSION" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "kirki for Mac $VERSION" --notes "$body" "${draft[@]}"

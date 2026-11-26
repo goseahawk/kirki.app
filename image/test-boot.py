@@ -98,7 +98,7 @@ def main():
         sys.exit("No aarch64 EFI firmware found (install qemu-efi-aarch64).")
     kvm = os.access("/dev/kvm", os.R_OK | os.W_OK)
     # Emulated, everything takes many times longer than on a Mac.
-    slow = 1 if kvm else 8
+    slow = 1 if kvm else 5
     log(f"KVM: {'yes' if kvm else 'no (emulating; slow)'}")
 
     disk = os.path.join(out, "test-disk.qcow2")
