@@ -101,8 +101,8 @@ block GitHub; try another network.
 **kirki's download stopped.** It carries on where it left off: choose **Try Again**, or log out and in
 again.
 
-**The kirki login shows the Mac desktop instead of kirki.** kirki was quit. Open it from the
-Applications folder, or log out and in again.
+**The kirki login shows the Mac desktop instead of kirki.** kirki was quit. Open kirki from the
+Applications folder (it starts full screen again), or log out and in again.
 
 **Something's wrong inside kirki.** Restart kirki (from kirki's menu, or kirki → Restart kirki in the
 Mac's menu bar). If kirki won't start at all, kirki → Settings → **Erase kirki** sets it up fresh

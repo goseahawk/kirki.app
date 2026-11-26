@@ -242,7 +242,6 @@ EOF
     sudo defaults write "$sa" LastSeenBuddyBuildVersion -string "$build"
     sudo defaults write "$prefs/.GlobalPreferences" AppleInterfaceStyle -string Dark
     sudo defaults write "$prefs/com.apple.dock" autohide -bool true
-    sudo defaults write "$prefs/com.apple.dock" autohide-delay -float 1000
     sudo defaults write "$prefs/com.apple.dock" show-recents -bool false
     sudo defaults write "$prefs/com.apple.dock" persistent-apps -array
     sudo defaults write "$prefs/com.apple.finder" CreateDesktop -bool false

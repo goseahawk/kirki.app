@@ -3,9 +3,13 @@ import KirkiCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// Started with --session (by the kirki login's launch agent, which the installer sets up): the
-    /// kirki login. Otherwise kirki runs in a window.
-    let mode: AppMode = CommandLine.arguments.contains("--session") ? .session : .window
+    /// The kirki login: started with --session (by its launch agent, which the installer sets up), or
+    /// opened by hand in the kirki account itself. Anywhere else, or with --window, kirki runs in a window.
+    let mode: AppMode = {
+        let args = CommandLine.arguments
+        if args.contains("--window") { return .window }
+        return args.contains("--session") || NSUserName() == "kirki" ? .session : .window
+    }()
     private var controller: KirkiController!
     private var keyMonitor: Any?
 
