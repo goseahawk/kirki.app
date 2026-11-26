@@ -17,6 +17,25 @@ KV_VM_PKGS=(linux-aarch64 linux-aarch64-headers dkms)
 
 kv_fail() { echo "ERROR: $*" >&2; return 1; }
 
+# kv_asahi_repo KIRKI_DIR: kirki's first-start setup window (Calamares) is packaged by Asahi ALARM,
+# not by Arch Linux ARM. Its repository is added (with its signing key, as kirki does) but LAST:
+# pacman takes a package from the first repository that has it, so everything Arch Linux ARM has
+# still comes from Arch Linux ARM, and only what's only in Asahi ALARM's (calamares) comes from there.
+kv_asahi_repo() {
+  install -m644 "$1/image/mirrorlist.asahi-alarm" /etc/pacman.d/mirrorlist.asahi-alarm
+  if ! grep -q '^\[asahi-alarm\]' /etc/pacman.conf; then
+    printf '\n# Asahi ALARM: kirki'"'"'s setup window (calamares). Last, so Arch Linux ARM comes first.\n[asahi-alarm]\nInclude = /etc/pacman.d/mirrorlist.asahi-alarm\n' >> /etc/pacman.conf
+  fi
+  if ! pacman -Q asahi-alarm-keyring >/dev/null 2>&1; then
+    # Its signing key isn't known yet: the keyring package is the one thing installed without a
+    # signature check (over HTTPS, from Asahi ALARM's GitHub releases), as kirki's build does.
+    sed -e '/^\[asahi-alarm\]/a SigLevel = Never' /etc/pacman.conf > /tmp/pacman-keyring.conf
+    pacman --config /tmp/pacman-keyring.conf -Sy --noconfirm asahi-alarm-keyring
+    rm -f /tmp/pacman-keyring.conf
+  fi
+  pacman-key --populate asahi-alarm
+}
+
 # kv_packages KIRKI_DIR: sets KV_PKGS and KV_OPTIONAL from kirki's own lists in its image/setup.sh,
 # without the Asahi packages and with the VM's.
 kv_packages() {
@@ -60,16 +79,12 @@ kv_install_tree() {
 kv_derive_files() {
   local src=$1/overlay/installed tmp
   tmp=$(mktemp -d)
-  # Weekly updates: refresh Arch Linux ARM's keyring (there's no Asahi ALARM repository in a VM), and
-  # "restart needed" follows the generic kernel.
-  sed -e 's/ asahi-alarm-keyring//' \
-      -e 's/linux-asahi/linux-aarch64/g' \
-      -e "s/Arch Linux ARM's and Asahi ALARM's signing keys/Arch Linux ARM's signing keys/" \
-      -e 's/the Arch Linux ARM + Asahi system/the Arch Linux ARM system/' \
-      "$src/usr/local/bin/kirk-auto-update" > "$tmp/kirk-auto-update"
-  if grep -q 'asahi-alarm-keyring' "$tmp/kirk-auto-update" \
+  # Weekly updates: "restart needed" follows the generic kernel. (Both signing keyrings are still
+  # refreshed: the VM has Asahi ALARM's repository too, for calamares.)
+  sed -e 's/linux-asahi/linux-aarch64/g' "$src/usr/local/bin/kirk-auto-update" > "$tmp/kirk-auto-update"
+  if grep -q 'linux-asahi' "$tmp/kirk-auto-update" \
      || ! grep -q 'pacman -Q linux-aarch64' "$tmp/kirk-auto-update" \
-     || ! grep -q 'pacman -Sy --needed --noconfirm archlinuxarm-keyring &&' "$tmp/kirk-auto-update"; then
+     || ! grep -q 'archlinuxarm-keyring' "$tmp/kirk-auto-update"; then
     rm -rf "$tmp"
     kv_fail "kirki's kirk-auto-update changed; update kv_derive_files in image/lib.sh"
     return 1

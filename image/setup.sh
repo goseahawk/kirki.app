@@ -22,12 +22,13 @@ say() { echo; echo "### $*"; }
 . "$V/image/lib.sh"
 
 # ------------------------------------------------------------------------------------- pacman
-say "pacman"
+say "pacman: Arch Linux ARM, and Asahi ALARM's repository last (for the setup window)"
 sed -i -e 's/^#\?ParallelDownloads.*/ParallelDownloads = 5/' /etc/pacman.conf
 # pacman downloads as the 'alpm' user, which has to exist first
 systemd-sysusers
 pacman-key --init
 pacman-key --populate archlinuxarm
+kv_asahi_repo "$K"
 
 # ------------------------------------------------------------------------------------- base
 say "Base system"
@@ -183,4 +184,5 @@ pacman -Scc --noconfirm >/dev/null 2>&1 || true
 rm -rf /var/cache/pacman/pkg/* /tmp/* /root/.cache
 # each install gets its own machine ID on its first start
 : > /etc/machine-id
+touch /kirk-src/setup-complete       # build.sh checks for it
 echo "kirki $VERSION for the Mac app is set up in the image."

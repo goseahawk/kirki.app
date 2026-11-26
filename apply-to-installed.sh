@@ -44,6 +44,7 @@ fi
 
 # ---------------------------------------------------------------------------------------- packages
 echo "== packages =="
+kv_asahi_repo "$K"
 # The ones kirki adds to installed systems (its apply-to-installed.sh), and the VM's own. Packages you
 # removed yourself from kirki's full list aren't brought back.
 PKGS=()

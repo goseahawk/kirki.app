@@ -68,9 +68,10 @@ if ((${#missing[@]})); then
   exit 1
 fi
 
-# Never leave anything mounted or attached, whatever happens.
+# Never leave anything mounted or attached, whatever happens. (A subshell, so its "set +e" doesn't
+# turn error checking off for the rest of the build.)
 LOOPS=()
-cleanup() {
+cleanup() (
   set +e
   for m in "$IMG" "$ROOT"; do
     while grep -q " ${m}[/ ]" /proc/mounts 2>/dev/null; do
@@ -78,7 +79,7 @@ cleanup() {
       sleep 0.2
     done
   done
-}
+)
 detach() { local l; for l in "${LOOPS[@]}"; do losetup -d "$l" 2>/dev/null; done; LOOPS=(); }
 trap 'cleanup; detach; true' EXIT
 
@@ -120,6 +121,8 @@ cp -r "$HERE/image" "$ROOT/kirk-src/vm/"
 echo "== Setting up kirki in the image (this is the long part) =="
 arch-chroot "$ROOT" env VERSION="$VERSION" ROOT_UUID="$ROOT_UUID" EFI_UUID="$EFI_UUID" KIRKI_REF="$KIRKI_REF" \
   /bin/bash /kirk-src/vm/image/setup.sh
+# setup.sh leaves this as its very last step: anything less is a failed build
+[[ -e $ROOT/kirk-src/setup-complete ]] || { echo "Setting up the image didn't finish (see the errors above)."; exit 1; }
 rm -rf "$ROOT/kirk-src"
 cleanup
 

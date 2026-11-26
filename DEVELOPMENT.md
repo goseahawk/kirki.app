@@ -111,7 +111,8 @@ doesn't accept virtio graphics, which kirki needs, so the app shuts kirki down a
 ## The image
 
 `image/build.sh` (as root, on 64-bit ARM Linux) downloads kirki at `image/kirki.ref` and Arch Linux ARM,
-runs `image/setup.sh` in a chroot, and makes a GPT disk: a 256 MB EFI partition (GRUB as
+runs `image/setup.sh` in a chroot (it must get to its last line, which leaves a marker the build checks),
+and makes a GPT disk: a 256 MB EFI partition (GRUB as
 `EFI/BOOT/BOOTAA64.EFI`) and kirki's Btrfs root with its subvolumes. It's compressed with xz, which the
 app reads with macOS's own Compression framework, and split into parts under 2 GiB if needed.
 `kirki-vm.json` lists the parts with sizes and SHA-256s.
@@ -121,14 +122,17 @@ app reads with macOS's own Compression framework, and split into parts under 2 G
 - **Kernel:** Arch Linux ARM's `linux-aarch64` instead of `linux-asahi`, and no Asahi packages. The
   generic kernel has the virtio drivers (Asahi's lacks the generic PCI host the framework uses). Its
   `/boot/Image` gets a `/boot/vmlinuz-linux` link, since GRUB's menu generator only finds `vmlinuz-*`.
+- **Asahi ALARM's repository** is still added, but last (`kv_asahi_repo`): kirki's setup window,
+  Calamares, is only packaged there. pacman takes a package from the first repository that has it, so
+  everything else comes from Arch Linux ARM.
 - **Sound:** the generic kernel doesn't build Linux's virtio sound driver (`CONFIG_SND_VIRTIO`), so it's
   built with DKMS (`/usr/src/virtio-snd-1`). `fetch-source.sh` takes the driver from Linux's own
   repository for each kernel's version (its file list from that version's Makefile), and keeps a copy
   for offline rebuilds. DKMS rebuilds it whenever the kernel is updated.
 - **Package lists** are read from kirki's `image/setup.sh` (`kv_packages` in `image/lib.sh`), minus the
   Asahi ones, so new kirki packages come along by themselves.
-- **Files:** kirki's `overlay/installed`, then VM versions of the two that name Asahi (made with `sed`
-  and checked: `kirk-auto-update`'s keyring and kernel, the snapshot hook's targets), then
+- **Files:** kirki's `overlay/installed`, then VM versions of the two that name the Asahi kernel (made
+  with `sed` and checked: `kirk-auto-update`'s "restart needed", the snapshot hook's targets), then
   `image/vm-overlay/`:
 
 | File | What it does |
