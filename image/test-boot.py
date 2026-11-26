@@ -109,7 +109,7 @@ def main():
             os.unlink(p)
     qemu = [
         "qemu-system-aarch64", "-machine", "virt", "-smp", "4", "-m", "4096",
-        *(["-accel", "kvm", "-cpu", "host"] if kvm else ["-accel", "tcg,thread=multi", "-cpu", "max"]),
+        *(["-accel", "kvm", "-cpu", "host"] if kvm else ["-accel", "tcg,thread=multi", "-cpu", "max,pauth-impdef=on"]),
         "-bios", firmware,
         "-drive", f"if=none,id=disk,file={disk},format=qcow2", "-device", "virtio-blk-pci,drive=disk",
         "-device", "virtio-gpu-pci,xres=1920,yres=1200",
@@ -159,11 +159,23 @@ def main():
         qmp = QMP(qmp_path)
         line = None
         end = time.time() + 6 * 60 * slow
+        next_shot, n = time.time() + 300, 0
         while time.time() < end:
-            line = ctl.read(end - time.time())
-            if line is None or line.startswith("ready"):
+            line = ctl.read(min(end, next_shot) - time.time())
+            if line is not None and line.startswith("ready"):
                 break
-            log(f"(guest: {line})")
+            if line is not None:
+                log(f"(guest: {line})")
+            else:
+                time.sleep(1)
+            if time.time() >= next_shot:       # where is it? a screenshot every 5 minutes
+                n += 1
+                shot(f"waiting-{n:02d}")
+                log(f"console so far: {os.path.getsize(os.path.join(out, 'console.log'))} bytes, "
+                    f"firmware: {os.path.getsize(os.path.join(out, 'firmware.log'))} bytes")
+                next_shot = time.time() + 300
+            if vm.poll() is not None:
+                break
         if not line or not line.startswith("ready"):
             problems.append("kirk-vm-agent never said ready")
             shot("no-agent")
@@ -221,6 +233,16 @@ def main():
             vm.wait()
         if os.path.exists(disk):
             os.unlink(disk)
+        for p in (ctl_path, qmp_path):        # sockets can't go in the artifact
+            if os.path.exists(p):
+                os.unlink(p)
+        if problems:                           # the logs, where the job log shows them
+            for name in ("firmware.log", "console.log"):
+                path = os.path.join(out, name)
+                if os.path.exists(path):
+                    with open(path, "rb") as f:
+                        tail = f.read()[-6000:].decode(errors="replace")
+                    print(f"---- {name} (last 6000 bytes) ----\n{tail}\n---- end of {name} ----", flush=True)
         results["problems"] = problems
         with open(os.path.join(out, "results.json"), "w") as f:
             json.dump(results, f, indent=2)
