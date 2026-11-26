@@ -61,7 +61,7 @@ sed -i '/efi_uga/d' /etc/grub.d/00_header           # no such module on arm64
 rm -f /etc/grub.d/30_uefi-firmware                   # no firmware settings screen to go to
 mkdir -p /boot/grub/fonts /boot/grub/locale
 touch /boot/grub/device.map
-dd if=/dev/zero of=/boot/grub/grubenv bs=1024 count=1 status=none
+grub-editenv /boot/grub/grubenv create        # a valid (empty) environment block
 rm -rf /boot/grub/arm64-efi
 cp -r /usr/lib/grub/arm64-efi /boot/grub/
 rm -f /boot/grub/arm64-efi/*.module

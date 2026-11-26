@@ -109,7 +109,7 @@ def main():
             os.unlink(p)
     qemu = [
         "qemu-system-aarch64", "-machine", "virt", "-smp", "4", "-m", "4096",
-        *(["-accel", "kvm", "-cpu", "host"] if kvm else ["-accel", "tcg,thread=multi", "-cpu", "max,pauth-impdef=on"]),
+        *(["-accel", "kvm", "-cpu", "host"] if kvm else ["-accel", "tcg,thread=multi", "-cpu", "neoverse-n1"]),
         "-bios", firmware,
         "-drive", f"if=none,id=disk,file={disk},format=qcow2", "-device", "virtio-blk-pci,drive=disk",
         "-device", "virtio-gpu-pci,xres=1920,yres=1200",
