@@ -1,0 +1,20 @@
+#!/bin/bash
+# Sharp text on a Mac's Retina screen: the kirki Mac app gives kirki the screen's full resolution, so
+# the first time you log in on it, everything is scaled as macOS does (200%; a little less on very large
+# screens, which the app gives fewer pixels to keep kirki quick). Only once: a scale you
+# choose yourself in System Settings > Display & Monitor stays. Runs at login (autostart).
+mark=${XDG_CONFIG_HOME:-$HOME/.config}/kirki-vm/display-scaled
+[[ -e $mark ]] && exit 0
+scale=$(sed -n 's/^DISPLAY_SCALE=//p' /run/kirki/host.env 2>/dev/null | head -1)
+[[ $scale =~ ^[1-3](\.[0-9]{1,2})?$ && $scale != 1 ]] || exit 0
+command -v kscreen-doctor >/dev/null || exit 0
+# KScreen needs a moment after login before it can change anything
+for _ in $(seq 20); do
+  outputs=$(kscreen-doctor -o 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk '/^Output:/ && / enabled/ {print $3}')
+  [[ -n $outputs ]] && break
+  sleep 0.5
+done
+[[ -n $outputs ]] || exit 0
+for o in $outputs; do kscreen-doctor "output.$o.scale.$scale" >/dev/null 2>&1 || true; done
+mkdir -p "${mark%/*}"
+touch "$mark"

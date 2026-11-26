@@ -1,0 +1,18 @@
+# kirki's connection to the kirki Mac app (see /usr/local/bin/kirk-vm-agent). Started by udev when
+# the app's port appears (/etc/udev/rules.d/90-kirki-vm.rules), early, so the Mac's keyboard and time
+# zone are known before the first-start setup opens.
+[Unit]
+Description=kirki: connection to the kirki Mac app
+ConditionPathExists=/dev/virtio-ports/org.kirki.control
+DefaultDependencies=no
+After=local-fs.target systemd-udevd.service
+Before=kirk-setup.service display-manager.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+ExecStart=/usr/local/bin/kirk-vm-agent
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

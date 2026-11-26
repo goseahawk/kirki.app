@@ -1,0 +1,90 @@
+#!/bin/bash
+# kirki first-start setup, in the kirki Mac app: shows the setup window (Calamares, full screen in the
+# cage kiosk compositor) until it has been completed, then exits so the desktop can start.
+# Run once by kirk-setup.service. Logs: journalctl -u kirk-setup
+#
+# This is kirki's own kirk-setup (overlay/installed/usr/local/bin/kirk-setup in
+# github.com/goseahawk/kirki) with what's different in a virtual machine:
+#   - the screen is virtio-gpu, which has no 3D, so the compositor draws with the CPU
+#   - the keyboard layout and time zone are suggested from the Mac's own settings, which the kirki
+#     app passes on (kirk-vm-agent saves them in /run/kirki/host.env), not from the device tree
+#   - a Retina screen gets 200%, as the app says, so the window is readable and sharp
+DONE=/var/lib/kirkus/setup-done
+HOST=/run/kirki/host.env
+trap 'killall -9 cage calamares 2>/dev/null || true' EXIT INT TERM
+
+host() { sed -n "s/^$1=//p" "$HOST" 2>/dev/null | head -1; }
+
+udevadm settle
+# wait (up to 5 s) for the screen
+for _ in $(seq 50); do
+  compgen -G '/dev/dri/card*' >/dev/null && break
+  sleep 0.1
+done
+# the Mac's settings arrive a moment after the VM starts (up to 5 s)
+for _ in $(seq 50); do
+  [[ -s $HOST ]] && break
+  sleep 0.1
+done
+
+# ---- pre-select the keyboard layout from the Mac's ----
+layout=$(host KEYBOARD_LAYOUT)
+variant=$(host KEYBOARD_VARIANT)
+if [[ $layout =~ ^[a-z]{2,8}$ ]] && grep -qE "^  $layout " /usr/share/X11/xkb/rules/base.lst 2>/dev/null; then
+  [[ $variant =~ ^[A-Za-z0-9_-]{1,32}$ ]] || variant=""
+  echo "Mac keyboard: $layout ${variant:-(no variant)}"
+  localectl set-x11-keymap "$layout" pc105 "$variant" || true
+fi
+
+# ---- the setup window's settings, with the Mac's time zone suggested ----
+CONF=/run/kirki/calamares
+rm -rf "$CONF"
+mkdir -p "${CONF%/*}"
+cp -r /usr/share/calamares-kirkus "$CONF"
+tz=$(host TIMEZONE)
+if [[ $tz =~ ^[A-Za-z_]+/[A-Za-z0-9_+/-]+$ && -f /usr/share/zoneinfo/$tz ]]; then
+  echo "Mac time zone: $tz"
+  timedatectl set-timezone "$tz" || true
+  # Calamares wants the region (America) and the rest (Argentina/Buenos_Aires) separately. With the
+  # Mac's own time zone known, it doesn't need to guess from the internet connection.
+  cat > "$CONF/modules/locale.conf" <<EOF
+# Written by kirk-setup: the Mac's time zone, as the kirki app passed it on.
+---
+region:         "${tz%%/*}"
+zone:           "${tz#*/}"
+localeGenPath:  "/etc/locale.gen"
+EOF
+fi
+
+# ---- the setup window ----
+export HOME=/run/user/0/kirk-setup-home
+rm -rf "$HOME"; mkdir -p "$HOME"; cd "$HOME" || exit 1
+export XDG_RUNTIME_DIR=$HOME/.runtime
+mkdir -p "$XDG_RUNTIME_DIR"; chmod 0700 "$XDG_RUNTIME_DIR"
+# Retina screens: Calamares draws at the app's scale itself (sharp), at the screen's own resolution
+scale=$(host DISPLAY_SCALE)
+if [[ -z $scale ]]; then
+  for m in /sys/class/drm/card*-*/modes; do
+    [[ -r $m ]] || continue
+    width=$(sort -n "$m" | tail -1 | cut -dx -f1)
+    [[ $width =~ ^[0-9]+$ ]] && ((width >= 2560)) && scale=2
+  done
+fi
+if [[ $scale =~ ^[1-3](\.[0-9]{1,2})?$ ]] && awk -v s="$scale" 'BEGIN { exit !(s >= 1.5) }'; then
+  export QT_SCALE_FACTOR=$scale XCURSOR_SIZE=48
+fi
+unset DISPLAY WAYLAND_DISPLAY
+export QT_QPA_PLATFORM=xcb QT_STYLE_OVERRIDE=Fusion QT_QPA_PLATFORMTHEME=
+# virtio-gpu has no 3D: let wlroots (cage) draw with Mesa's software renderer
+export WLR_RENDERER_ALLOW_SOFTWARE=1
+
+# Calamares can't be cancelled, but it can crash or be closed by force. Show it again, at most
+# three times; if setup still isn't done, it's shown again at the next start.
+for attempt in 1 2 3; do
+  cage -s -- calamares -D6 -c "$CONF"
+  [[ -e $DONE ]] && { echo "Setup complete."; exit 0; }
+  echo "Setup window closed before setup was finished (attempt $attempt)."
+  sleep 2
+done
+echo "Setup was not completed; it starts again at the next start."
+exit 1

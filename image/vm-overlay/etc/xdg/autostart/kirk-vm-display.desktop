@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=kirki Retina scaling
+Exec=/usr/local/bin/kirk-vm-display
+OnlyShowIn=KDE;
+NoDisplay=true

@@ -1,0 +1,7 @@
+/build/
+/out/
+/app/.build/
+/app/.swiftpm/
+*.partial
+.DS_Store
+__pycache__/

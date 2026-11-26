@@ -1,0 +1,10 @@
+# In the kirki Mac app, the Mac manages the screen and power: it dims and turns off the display and
+# goes to sleep (kirki is paused with it). kirki only shuts down when asked: the app's request to stop
+# (the "power button") shuts kirki down cleanly instead of showing the logout screen.
+[AC][Display]
+DimDisplayWhenIdle=false
+TurnOffDisplayWhenIdle=false
+
+[AC][SuspendAndShutdown]
+AutoSuspendAction=0
+PowerButtonAction=8

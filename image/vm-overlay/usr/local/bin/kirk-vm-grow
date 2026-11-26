@@ -1,0 +1,39 @@
+#!/bin/bash
+# Grows kirki's root partition and file system to fill the virtual disk. The kirki Mac app sets the
+# disk's size (when it installs kirki, and whenever it's made bigger in the app's settings); this
+# runs at every start and does nothing when there's no new space.
+#
+#   kirk-vm-grow [MOUNTPOINT]    (default /; another mount point is only for testing)
+#
+# Logs: journalctl -u kirk-vm-grow
+set -euo pipefail
+MNT=${1:-/}
+src=$(findmnt -no SOURCE "$MNT" | sed 's/\[.*\]$//')      # /dev/vda2[/@] -> /dev/vda2
+part=$(basename "$(readlink -f "$src")")
+disk=$(lsblk -no PKNAME "/dev/$part" | head -1)
+[[ -n $disk && -r /sys/class/block/$part/partition ]] || { echo "$src isn't a partition; nothing to grow."; exit 0; }
+num=$(cat "/sys/class/block/$part/partition")
+dev=/dev/$disk
+
+disk_sectors=$(cat "/sys/class/block/$disk/size")           # 512-byte sectors, always
+end=$(( $(cat "/sys/class/block/$part/start") + $(cat "/sys/class/block/$part/size") ))
+# Only the last partition can grow, into the space after it (less GPT's backup copy at the end).
+last=$(lsblk -nro NAME "$dev" | tail -1)
+[[ $last == "$part" ]] || { echo "$part isn't the disk's last partition; leaving it."; exit 0; }
+free=$(( disk_sectors - end - 34 ))
+if (( free < 16 * 2048 )); then
+  echo "No new space on $dev (disk: $(( disk_sectors / 2048 )) MiB)."
+else
+  echo "Growing $part by $(( free / 2048 )) MiB to fill $dev."
+  # After the disk got bigger, GPT's backup copy is still where the old end was: move it to the end.
+  sfdisk --quiet --no-reread --no-tell-kernel --relocate gpt-bak-std "$dev"
+  echo ', +' | sfdisk --quiet --no-reread --no-tell-kernel -N "$num" "$dev"
+  partx -u --nr "$num" "$dev"
+fi
+# Always: the file system may not have caught up with the partition last time.
+fs_bytes=$(findmnt -bno SIZE "$MNT" | head -1)
+part_bytes=$(( $(cat "/sys/class/block/$part/size") * 512 ))
+if (( part_bytes - fs_bytes > 64 * 1024 * 1024 )); then
+  btrfs filesystem resize max "$MNT"
+  echo "The file system is now $(findmnt -no SIZE "$MNT" | head -1)."
+fi
