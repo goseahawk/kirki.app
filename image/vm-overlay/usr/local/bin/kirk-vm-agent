@@ -10,6 +10,8 @@
 #                          the apps first (they can ask about unsaved work), then the system stops
 #   status                 answered with "status KEY=VALUE..." (for the app's log and for testing)
 #   ping                   answered with "pong"
+#   journal UNIT           the last messages of one of kirki's own services (kirk-*), each sent as
+#                          "log UNIT: TEXT", then "log-end" (for the app's log when something fails)
 # To the Mac app:
 #   ready VERSION          when this starts (the app answers with hostinfo and time)
 #   power poweroff|reboot  at the very end of shutting down (sent by kirk-vm-power, not from here)
@@ -95,6 +97,15 @@ status() {
   send "status agent=$VERSION kernel=$(uname -r) root_bytes=${root:-0} sound=$snd rosetta=$ros setup_done=$setup ui=$(ui_state) failed=${failed:-none}"
 }
 
+journal() {
+  local unit=$1 l
+  if [[ $unit =~ ^kirk-[a-z0-9-]+$ ]]; then
+    while IFS= read -r l; do send "log $unit: ${l:0:300}"; done \
+      < <(journalctl -b -u "$unit.service" -n 80 --no-pager -o cat 2>&1)
+  fi
+  send "log-end"
+}
+
 while true; do
   if ! exec 3<>"$PORT"; then sleep 2; continue; fi
   send "ready $VERSION"
@@ -108,6 +119,7 @@ while true; do
       reboot)   do_shutdown reboot & ;;
       status)   status ;;
       ping)     send pong ;;
+      journal)  journal "$args" ;;
       "")       ;;
       *)        echo "Unknown message from the Mac app: ${cmd:0:40}" ;;
     esac

@@ -198,6 +198,14 @@ def main():
         st = status() or st or {}
         if st.get("ui") != "setup":
             problems.append(f"the first-start setup window didn't open (ui={st.get('ui')})")
+        if st.get("ui") != "setup" or "kirk-" in st.get("failed", ""):
+            ctl.send("journal kirk-setup")             # what the setup window's service said
+            end = time.time() + 60 * slow
+            while time.time() < end:
+                line = ctl.read(end - time.time())
+                if line is None or line == "log-end":
+                    break
+                print(f"  {line}", flush=True)
         if int(st.get("root_bytes", 0)) < (DISK_GB - 5) * 10**9:
             problems.append(f"the root file system didn't grow to the disk ({st.get('root_bytes')} bytes)")
         if st.get("sound") != "yes":
