@@ -127,7 +127,7 @@ jobs:
 
   app:
     needs: version
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 45
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -181,7 +181,8 @@ jobs:
 
   publish:
     needs: [version, image, app]
-    if: ${{ !cancelled() && !failure() && !startsWith(inputs.publish, 'Just') }}
+    # only with a freshly built app, and an image that's new and tested or kept from the last release
+    if: ${{ !cancelled() && needs.app.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped') && !startsWith(inputs.publish, 'Just') }}
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
