@@ -131,6 +131,7 @@ final class KirkiController {
             }
             self.runner = runner
             windowController.showVM(runner.vm, capturesSystemKeys: mode == .session || settings.captureSystemKeysInWindow)
+            windowController.fitWindow(to: display)
             beginActivity()
             runner.start()
         } catch {
