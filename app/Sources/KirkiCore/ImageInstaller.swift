@@ -2,7 +2,7 @@ import Foundation
 
 /// Gets kirki onto this Mac: downloads the newest image (kirki-vm.json says where), checks it, and
 /// unpacks it into kirki's disk (Paths.disk), sized as the settings say. Run it off the main thread.
-public final class ImageInstaller {
+public final class ImageInstaller: Sendable {
     public enum Stage: Equatable {
         case checking
         /// bytes so far and in all, and the speed (bytes per second; 0 while it's still unknown)

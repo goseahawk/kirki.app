@@ -203,7 +203,7 @@ final class SettingsTests: XCTestCase {
     func testManifestValidation() throws {
         let good = """
         {"format": 1, "version": "26.11.26", "image": {"compression": "xz", "size": 10, "sha256": "\(String(repeating: "a", count: 64))",
-         "uncompressedSize": 100, "parts": [{"url": "https://example.com/a", "size": 10, "sha256": "\(String(repeating: "b", count: 64))"}]}}
+         "uncompressedSize": 100, "parts": [{"url": "https://example.com/a", "size":10, "sha256": "\(String(repeating: "b", count: 64))"}]}}
         """
         XCTAssertNoThrow(try ImageManifest.decode(Data(good.utf8)))
         XCTAssertThrowsError(try ImageManifest.decode(Data(good.replacingOccurrences(of: "\"format\": 1", with: "\"format\": 2").utf8)))

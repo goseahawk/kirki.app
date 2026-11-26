@@ -53,17 +53,21 @@ final class KirkiController {
                     actions: escapeActions())
         let installer = ImageInstaller(manifestURL: settings.manifestURL, diskGB: settings.diskGB)
         let throttle = Throttle(interval: 0.2)
-        installTask = Task.detached { [weak self] in
+        // install() is async and not tied to the main actor: the work happens off the main thread,
+        // and this task comes back to the main thread when it's done.
+        installTask = Task { [weak self] in
             do {
                 let installed = try await installer.install { stage in
                     guard throttle.allow(stage) else { return }
-                    Task { @MainActor in self?.showInstall(stage) }
+                    DispatchQueue.main.async { [weak self] in
+                        MainActor.assumeIsolated { self?.showInstall(stage) }
+                    }
                 }
-                await MainActor.run { self?.installed(installed) }
+                self?.installed(installed)
             } catch is CancellationError {
                 return
             } catch {
-                await MainActor.run { self?.installFailed(error) }
+                self?.installFailed(error)
             }
         }
     }
