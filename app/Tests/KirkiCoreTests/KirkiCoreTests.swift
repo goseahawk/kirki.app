@@ -159,17 +159,17 @@ final class SettingsTests: XCTestCase {
     let mac64 = HostInfo(physicalMemory: 64 << 30, processorCount: 12, model: "Mac14,6", chip: "Apple M2 Max", freeDiskBytes: 900 << 30)
 
     func testDefaultsFitTheMac() {
-        XCTAssertEqual(Settings.defaults(for: mac8).memoryGB, 5)
-        XCTAssertEqual(Settings.defaults(for: mac16).memoryGB, 10)
-        XCTAssertEqual(Settings.defaults(for: mac64).memoryGB, 32)
-        XCTAssertEqual(Settings.defaults(for: mac8).processors, 8)
-        XCTAssertEqual(Settings.defaults(for: mac8).diskGB, 64)
-        XCTAssertEqual(Settings.defaults(for: mac16).diskGB, Settings.minimumDiskGB, "short of space: a smaller disk")
+        XCTAssertEqual(AppSettings.defaults(for: mac8).memoryGB, 5)
+        XCTAssertEqual(AppSettings.defaults(for: mac16).memoryGB, 10)
+        XCTAssertEqual(AppSettings.defaults(for: mac64).memoryGB, 32)
+        XCTAssertEqual(AppSettings.defaults(for: mac8).processors, 8)
+        XCTAssertEqual(AppSettings.defaults(for: mac8).diskGB, 64)
+        XCTAssertEqual(AppSettings.defaults(for: mac16).diskGB, AppSettings.minimumDiskGB, "short of space: a smaller disk")
     }
 
     func testOldSettingsGetNewDefaults() throws {
         let old = #"{"memoryGB": 6, "retina": false}"#
-        let s = try JSONDecoder().decode(Settings.self, from: Data(old.utf8))
+        let s = try JSONDecoder().decode(AppSettings.self, from: Data(old.utf8))
         XCTAssertEqual(s.memoryGB, 6)
         XCTAssertFalse(s.retina)
         XCTAssertEqual(s.whenKirkiShutsDown, .logOut)
@@ -177,14 +177,14 @@ final class SettingsTests: XCTestCase {
     }
 
     func testClamping() {
-        var s = Settings.defaults(for: mac8)
+        var s = AppSettings.defaults(for: mac8)
         s.memoryGB = 100
         s.processors = 99
         s.diskGB = 1
         let c = s.clamped(to: mac8)
         XCTAssertEqual(c.memoryGB, 6)
         XCTAssertEqual(c.processors, 8)
-        XCTAssertEqual(c.diskGB, Settings.minimumDiskGB)
+        XCTAssertEqual(c.diskGB, AppSettings.minimumDiskGB)
     }
 
     func testKeyboardLayouts() {

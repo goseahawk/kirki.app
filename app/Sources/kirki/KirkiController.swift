@@ -8,7 +8,7 @@ import Virtualization
 final class KirkiController {
     let mode: AppMode
     let host = HostInfo.current
-    private(set) var settings: Settings
+    private(set) var settings: AppSettings
     let status = StatusModel()
     let windowController: WindowController
 
@@ -23,7 +23,7 @@ final class KirkiController {
 
     init(mode: AppMode) {
         self.mode = mode
-        settings = Settings.load(host: host)
+        settings = AppSettings.load(host: host)
         windowController = WindowController(mode: mode, status: status)
     }
 
@@ -237,7 +237,7 @@ final class KirkiController {
         settingsWindow?.show()
     }
 
-    private func settingsChanged(_ new: Settings) {
+    private func settingsChanged(_ new: AppSettings) {
         settings = new
         if mode == .session { Session.applyPresentation(new.macMenuBar) }
         if mode == .window { windowController.setCapturesSystemKeys(new.captureSystemKeysInWindow) }

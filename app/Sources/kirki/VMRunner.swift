@@ -27,7 +27,7 @@ final class VMRunner: NSObject, VZVirtualMachineDelegate {
     /// configuration: today it doesn't take virtio graphics, which kirki needs. Used when it can.
     private let canSaveState: Bool
 
-    init(settings: Settings, display: DisplayConfiguration, host: HostInfo) throws {
+    init(settings: AppSettings, display: DisplayConfiguration, host: HostInfo) throws {
         self.display = display
         self.host = host
         let configuration = try VMConfigurationBuilder.make(settings: settings, display: display,

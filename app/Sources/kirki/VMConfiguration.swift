@@ -77,7 +77,7 @@ enum VMFiles {
 enum VMConfigurationBuilder {
     static let controlPortName = "org.kirki.control"
 
-    static func make(settings: Settings, display: DisplayConfiguration, channel: GuestChannel,
+    static func make(settings: AppSettings, display: DisplayConfiguration, channel: GuestChannel,
                      console: ConsoleLog) throws -> VZVirtualMachineConfiguration {
         let c = VZVirtualMachineConfiguration()
         c.cpuCount = min(max(settings.processors, VZVirtualMachineConfiguration.minimumAllowedCPUCount),

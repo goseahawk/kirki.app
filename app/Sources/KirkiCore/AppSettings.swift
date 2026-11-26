@@ -19,7 +19,7 @@ public enum MenuBarMode: String, Codable, CaseIterable {
 
 /// The app's settings (~/Library/Application Support/kirki/settings.json). Most take effect the
 /// next time kirki starts.
-public struct Settings: Codable, Equatable {
+public struct AppSettings: Codable, Equatable {
     public var memoryGB: Int
     public var processors: Int
     /// kirki's disk. It can only grow: kirki's partition grows into the new space when it starts.
@@ -44,13 +44,13 @@ public struct Settings: Codable, Equatable {
     /// Defaults for this Mac: about 60% of its memory (at least 4 GB, leaving macOS at least 3 GB),
     /// all its processors, and a 64 GB disk (less if the Mac is short of space; it only takes the
     /// space kirki actually uses).
-    public static func defaults(for host: HostInfo) -> Settings {
+    public static func defaults(for host: HostInfo) -> AppSettings {
         let memory = max(4, min(Int((Double(host.memoryGB) * 0.6).rounded()), max(host.memoryGB - 3, 4), 32))
         var disk = 64
         if host.freeDiskGB > 0 && host.freeDiskGB < disk + 20 {
             disk = max(minimumDiskGB, host.freeDiskGB - 20)
         }
-        return Settings(
+        return AppSettings(
             memoryGB: memory, processors: max(1, host.processorCount), diskGB: disk,
             retina: true, microphone: true, rosetta: true,
             whenKirkiShutsDown: .logOut, macMenuBar: .showAtTop, pauseWhenSwitchedAway: true,
@@ -81,7 +81,7 @@ public struct Settings: Codable, Equatable {
     }
 
     public init(from decoder: Decoder) throws {
-        let d = Settings.defaults(for: .current)
+        let d = AppSettings.defaults(for: .current)
         let c = try decoder.container(keyedBy: CodingKeys.self)
         memoryGB = (try? c.decodeIfPresent(Int.self, forKey: .memoryGB)) ?? d.memoryGB
         processors = (try? c.decodeIfPresent(Int.self, forKey: .processors)) ?? d.processors
@@ -97,11 +97,11 @@ public struct Settings: Codable, Equatable {
     }
 
     /// The settings, kept within what this Mac can do.
-    public func clamped(to host: HostInfo) -> Settings {
+    public func clamped(to host: HostInfo) -> AppSettings {
         var s = self
         s.memoryGB = min(max(s.memoryGB, 2), max(host.memoryGB - 2, 2))
         s.processors = min(max(s.processors, 1), max(host.processorCount, 1))
-        s.diskGB = min(max(s.diskGB, Settings.minimumDiskGB), 4096)
+        s.diskGB = min(max(s.diskGB, AppSettings.minimumDiskGB), 4096)
         return s
     }
 
@@ -109,12 +109,12 @@ public struct Settings: Codable, Equatable {
         let text = imageManifestURL.trimmingCharacters(in: .whitespaces)
         if let env = ProcessInfo.processInfo.environment["KIRKI_MANIFEST_URL"], let url = URL(string: env) { return url }
         if !text.isEmpty, let url = URL(string: text), url.scheme == "https" || url.isFileURL { return url }
-        return URL(string: Settings.latestManifestURL)!
+        return URL(string: AppSettings.latestManifestURL)!
     }
 
-    public static func load(host: HostInfo = .current) -> Settings {
+    public static func load(host: HostInfo = .current) -> AppSettings {
         if let data = try? Data(contentsOf: Paths.settings),
-           let saved = try? JSONDecoder().decode(Settings.self, from: data) {
+           let saved = try? JSONDecoder().decode(AppSettings.self, from: data) {
             return saved.clamped(to: host)
         }
         return defaults(for: host)

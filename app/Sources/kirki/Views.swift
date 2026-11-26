@@ -126,7 +126,7 @@ struct KirkiButtonStyle: ButtonStyle {
 
 @MainActor
 final class SettingsModel: ObservableObject {
-    @Published var settings: Settings {
+    @Published var settings: AppSettings {
         didSet {
             guard settings != oldValue else { return }
             do { try settings.save() } catch { Log.error("Couldn't save the settings: \(error)") }
@@ -138,11 +138,11 @@ final class SettingsModel: ObservableObject {
     let mode: AppMode
     let diskNowGB: Int
     let installedVersion: String?
-    let onChange: (Settings) -> Void
+    let onChange: (AppSettings) -> Void
     let restart: () -> Void
     let erase: () -> Void
 
-    init(settings: Settings, host: HostInfo, mode: AppMode, onChange: @escaping (Settings) -> Void,
+    init(settings: AppSettings, host: HostInfo, mode: AppMode, onChange: @escaping (AppSettings) -> Void,
          restart: @escaping () -> Void, erase: @escaping () -> Void) {
         self.settings = settings
         self.host = host
@@ -171,7 +171,7 @@ struct SettingsView: View {
     @State private var confirmErase = false
 
     private var maxMemory: Int { max(2, model.host.memoryGB - 2) }
-    private var minDisk: Int { max(Settings.minimumDiskGB, model.diskNowGB) }
+    private var minDisk: Int { max(AppSettings.minimumDiskGB, model.diskNowGB) }
     private var maxDisk: Int { max(minDisk, model.diskNowGB + model.host.freeDiskGB - 10) }
 
     var body: some View {
