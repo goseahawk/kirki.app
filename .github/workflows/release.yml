@@ -1,6 +1,6 @@
 # Builds everything a kirki for Mac release has, and (optionally) publishes it:
 #   - kirki's disk image, on GitHub's ARM servers, tested by starting it in QEMU
-#   - the kirki app, on GitHub's Apple silicon Macs
+#   - the kirki app, on GitHub's Apple silicon Macs (or the one you built on your Mac and uploaded)
 #   - install.sh, the command people run in Terminal
 # Run it from the Actions tab: "Release" -> "Run workflow".
 name: Release
@@ -27,6 +27,13 @@ on:
         options:
           - "Build a new one"
           - "Keep the latest release's (only the app changed)"
+      app:
+        description: "The kirki app"
+        type: choice
+        default: "Build it on GitHub's Macs"
+        options:
+          - "Build it on GitHub's Macs"
+          - "Use the kirki-app.zip uploaded to this version's draft release (built on your Mac)"
       test:
         description: "Start the new image in QEMU to test it"
         type: boolean
@@ -56,10 +63,25 @@ jobs:
         env:
           INPUT_VERSION: ${{ inputs.version }}
           PUBLISH: ${{ inputs.publish }}
+          APP: ${{ inputs.app }}
           GH_TOKEN: ${{ github.token }}
         run: |
           exists() { gh release view "$1" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; }
           v="$INPUT_VERSION"
+          if [[ $APP == Use* ]]; then
+            # the app built on a Mac waits in a draft release: that release's version is this one
+            if [[ -z $v ]]; then
+              v=$(gh release list --repo "$GITHUB_REPOSITORY" --json tagName,isDraft \
+                    --jq '[.[] | select(.isDraft)][0].tagName // empty')
+            fi
+            [[ -n $v ]] || { echo "::error::No draft release found. Upload kirki-app.zip to a draft release first (see DEVELOPMENT.md)."; exit 1; }
+            gh release view "$v" --repo "$GITHUB_REPOSITORY" --json isDraft,assets \
+              --jq 'select(.isDraft) | .assets[].name' | grep -qx kirki-app.zip \
+              || { echo "::error::Release $v isn't a draft with kirki-app.zip in it."; exit 1; }
+            echo "version=$v" >> "$GITHUB_OUTPUT"
+            echo "kirki for Mac $v (app from the draft release)"
+            exit 0
+          fi
           if [[ -z $v ]]; then
             v=$(date +%y.%m.%d); n=0
             while [[ $PUBLISH != Just* ]] && exists "$v"; do n=$((n + 1)); v="$(date +%y.%m.%d).$n"; done
@@ -127,6 +149,7 @@ jobs:
 
   app:
     needs: version
+    if: ${{ startsWith(inputs.app, 'Build') }}
     runs-on: macos-latest
     timeout-minutes: 45
     env:
@@ -181,8 +204,8 @@ jobs:
 
   publish:
     needs: [version, image, app]
-    # only with a freshly built app, and an image that's new and tested or kept from the last release
-    if: ${{ !cancelled() && needs.app.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped') && !startsWith(inputs.publish, 'Just') }}
+    # only with an app (built here or uploaded), and an image that's new and tested or kept from the last release
+    if: ${{ !cancelled() && (needs.app.result == 'success' || needs.app.result == 'skipped') && (needs.image.result == 'success' || needs.image.result == 'skipped') && !startsWith(inputs.publish, 'Just') }}
     runs-on: ubuntu-24.04
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -197,10 +220,22 @@ jobs:
       - name: Gather the release files
         env:
           IMAGE: ${{ inputs.image }}
+          APP: ${{ inputs.app }}
         run: |
           mkdir -p out
           cp install.sh out/
-          cp artifacts/app/* out/
+          if [[ $APP == Use* ]]; then
+            gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --pattern 'kirki-app.zip*' --dir out
+            if [[ -f out/kirki-app.zip.sha256 ]]; then
+              (cd out && sha256sum -c kirki-app.zip.sha256)
+            else
+              (cd out && sha256sum kirki-app.zip > kirki-app.zip.sha256)
+            fi
+            unzip -l out/kirki-app.zip | grep -q 'kirki.app/Contents/MacOS/kirki$' \
+              || { echo "::error::kirki-app.zip doesn't hold kirki.app (build it with app/build-app.sh)."; exit 1; }
+          else
+            cp artifacts/app/* out/
+          fi
           if [[ $IMAGE == Build* ]]; then
             cp artifacts/image/* out/
           else
@@ -215,6 +250,7 @@ jobs:
         env:
           PUBLISH: ${{ inputs.publish }}
           NOTES: ${{ inputs.notes }}
+          APP: ${{ inputs.app }}
         run: |
           body="${NOTES:-kirki for Mac $VERSION}
 
@@ -225,5 +261,12 @@ jobs:
           Already using kirki? Run the same command to update the app. kirki itself updates on its own."
           draft=()
           [[ $PUBLISH == Draft* ]] && draft=(--draft)
+          if [[ $APP == Use* ]]; then
+            # the draft is already there: add the rest, then publish it (or leave it a draft)
+            gh release upload "$VERSION" out/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "kirki for Mac $VERSION" --notes "$body" --draft="$([[ $PUBLISH == Draft* ]] && echo true || echo false)"
+            exit 0
+          fi
           gh release create "$VERSION" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "kirki for Mac $VERSION" --notes "$body" "${draft[@]}"

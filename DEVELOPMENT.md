@@ -180,6 +180,12 @@ nothing new in `overlay/installed` assumes Mac hardware.
   see; "Publish release" makes it the one the install command uses. "Keep the latest release's image"
   skips the image build when only the app changed (the release then points at the older release's
   image files, so don't delete that release).
+- **App built on your own Mac** (when GitHub's Macs aren't available): on a Mac with Xcode, run
+  `KIRK_VERSION=26.11.26 app/build-app.sh`, then on GitHub: Releases → Draft a new release, tag
+  `26.11.26`, attach `out/kirki-app.zip` and `out/kirki-app.zip.sha256`, **Save draft**. Then run
+  **Release** with "The kirki app" set to "Use the kirki-app.zip uploaded…" (version empty uses the
+  newest draft). It builds the image on Linux, adds it and `install.sh` to that draft, and publishes it
+  (or leaves it a draft). The app must be built for the same version as the draft's tag.
 
 To try a build before it's published, put its `kirki-vm.json` somewhere and set it in kirki's settings
 file (`imageManifestURL` in `~/Library/Application Support/kirki/settings.json`), or start the app with
