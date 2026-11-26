@@ -45,6 +45,8 @@ CONF=/run/kirki/calamares
 rm -rf "$CONF"
 mkdir -p "${CONF%/*}"
 cp -r /usr/share/calamares-kirkus "$CONF"
+# Calamares started with -c DIR also wants its QML in DIR/qml (as Asahi ALARM's config has it)
+[[ -e $CONF/qml ]] || ln -s /usr/share/calamares/qml "$CONF/qml"
 tz=$(host TIMEZONE)
 if [[ $tz =~ ^[A-Za-z_]+/[A-Za-z0-9_+/-]+$ && -f /usr/share/zoneinfo/$tz ]]; then
   echo "Mac time zone: $tz"
