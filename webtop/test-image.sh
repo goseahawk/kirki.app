@@ -78,12 +78,15 @@ with sync_playwright() as p:
     page.goto(f"http://127.0.0.1:{port}/", wait_until="load", timeout=60000)
     page.wait_for_timeout(30000)
     page.screenshot(path=f"{out}/browser.png")
+    # a while later: has everything caught up with the window's size?
+    page.wait_for_timeout(45000)
+    page.screenshot(path=f"{out}/browser-later.png")
     print("browser title:", page.title())
     b.close()
 PY
 fi
 
-for f in browser plasma; do
+for f in browser browser-later plasma; do
   [[ -f $OUT/$f.png ]] || continue
   if python3 -c 'import PIL' 2>/dev/null; then
     python3 - "$OUT/$f.png" <<'PY'
