@@ -52,7 +52,7 @@ sleep 45
 
 # Plasma's own screenshot, with the session's environment
 if [[ $up == yes ]]; then
-  env=$(in_kirki sh -c 'tr "\0" "\n" < /proc/$(pgrep -xo plasmashell)/environ' |
+  env=$(in_kirki sh -c 'p=$(pgrep -xo plasmashell) && tr "\0" "\n" < /proc/$p/environ' |
         grep -E '^(WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|XDG_CONFIG_DIRS|DISPLAY)=' |
         sed 's/^/-e /' | tr '\n' ' ')
   # shellcheck disable=SC2086
@@ -98,9 +98,15 @@ PY
   fi
 done
 
+if [[ $up == yes ]] && ! in_kirki pgrep -x plasmashell >/dev/null 2>&1; then
+  fail "Plasma (plasmashell) started, then stopped"
+fi
+in_kirki pgrep -x kwin_wayland >/dev/null 2>&1 || fail "KWin (kwin_wayland) isn't running"
 docker logs "$NAME" > "$OUT/container.log" 2>&1
 if ((${#problems[@]})); then
-  echo "---- container log (last 80 lines) ----"; tail -n 80 "$OUT/container.log"
+  echo "---- processes ----"; in_kirki ps -eo user,pid,etime,args | cut -c1-160 | head -60
+  echo "---- container log (last 120 lines, repeats left out) ----"
+  uniq -c -f 1 "$OUT/container.log" | tail -n 120
   docker rm -f "$NAME" >/dev/null
   log "FAILED:"; printf '  %s\n' "${problems[@]}"
   exit 1

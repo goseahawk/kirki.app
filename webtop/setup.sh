@@ -20,7 +20,19 @@ PKGS=(
   ark gwenview okular spectacle kdialog
   firefox noto-fonts noto-fonts-emoji fastfetch fontconfig
 )
-pacman -Syu --noconfirm --needed "${PKGS[@]}"
+# Not a full upgrade: webtop's own KWin is built against its exact Qt, and its web server's modules
+# against its exact nginx, so those stay as webtop has them (a newer Qt crashed Plasma). If a package
+# here ever needs them newer, the build stops (below) rather than making an image that doesn't start.
+HELD='qt6-*,kwin,nginx*'
+held_versions() { pacman -Q | grep -E '^(qt6-[^ ]+|kwin|nginx[^ ]*) ' | sort; }
+before=$(held_versions)
+pacman -Sy --noconfirm --needed --ignore "$HELD" "${PKGS[@]}"
+after=$(held_versions)
+if [[ $before != "$after" ]]; then
+  echo "ERROR: installing kirki's apps changed packages webtop's desktop depends on:"
+  diff <(echo "$before") <(echo "$after") || true
+  exit 1
+fi
 
 say "kirki's files"
 leave_out() {
