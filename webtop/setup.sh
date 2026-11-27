@@ -20,13 +20,22 @@ PKGS=(
   ark gwenview okular spectacle kdialog
   firefox noto-fonts noto-fonts-emoji fastfetch fontconfig
 )
+# spectacle's text recognition wants a language: English, rather than pacman's first choice
+PKGS=(tesseract-data-eng "${PKGS[@]}")
 # Not a full upgrade: webtop's own KWin is built against its exact Qt, and its web server's modules
 # against its exact nginx, so those stay as webtop has them (a newer Qt crashed Plasma). If a package
 # here ever needs them newer, the build stops (below) rather than making an image that doesn't start.
 HELD='qt6-*,kwin,nginx*'
 held_versions() { pacman -Q | grep -E '^(qt6-[^ ]+|kwin|nginx[^ ]*) ' | sort; }
 before=$(held_versions)
-pacman -Sy --noconfirm --needed --ignore "$HELD" "${PKGS[@]}"
+pacman -Sy
+# One at a time: a package that needs a newer Qt (or a Qt part only the newer Qt has, as
+# kinfocenter and spectacle can) is left out with a warning, and the rest still go in.
+MISSING=()
+for p in "${PKGS[@]}"; do
+  pacman -S --noconfirm --needed --ignore "$HELD" "$p" || MISSING+=("$p")
+done
+((${#MISSING[@]} == 0)) || echo "WARNING: left out (they need a newer Qt than webtop's): ${MISSING[*]}"
 after=$(held_versions)
 if [[ $before != "$after" ]]; then
   echo "ERROR: installing kirki's apps changed packages webtop's desktop depends on:"
