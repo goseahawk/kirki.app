@@ -67,7 +67,6 @@ final class WindowController: NSObject, NSWindowDelegate {
     }
 
     func showStatus() {
-        if mode == .window { window.contentResizeIncrements = NSSize(width: 1, height: 1) }   // any shape again
         vmView?.virtualMachine = nil
         vmView = nil
         place(statusView, belowNotch: false)
@@ -77,9 +76,7 @@ final class WindowController: NSObject, NSWindowDelegate {
         let view = VZVirtualMachineView()
         view.virtualMachine = vm
         view.capturesSystemKeys = capturesSystemKeys
-        // kirki's screen keeps the size it started with; the view scales it (a window keeps its shape).
-        // Changing it underneath kirki isn't followed by the setup window, so its bottom was cut off.
-        view.automaticallyReconfiguresDisplay = false
+        view.automaticallyReconfiguresDisplay = true
         vmView = view
         place(view, belowNotch: mode == .session)
         window.makeFirstResponder(view)
@@ -89,34 +86,16 @@ final class WindowController: NSObject, NSWindowDelegate {
         vmView?.capturesSystemKeys = on
     }
 
-    /// The size kirki's screen should be. Always the whole screen's (below the notch): in the kirki
-    /// login that's the window, and in a window it's what full screen shows, so going full screen
-    /// fits exactly. A window keeps the same shape as kirki's screen (see fitWindow), so nothing is
-    /// cut off: kirki doesn't change its resolution when the window changes size.
+    /// The size kirki's screen should be, for the screen or window it's shown in.
     func display(retina: Bool) -> DisplayConfiguration {
         let screen = mode == .session ? Self.mainScreen : (window.screen ?? Self.mainScreen)
-        let points = CGSize(width: screen.frame.width, height: screen.frame.height - screen.safeAreaInsets.top)
+        let points: CGSize
+        if mode == .session {
+            points = CGSize(width: screen.frame.width, height: screen.frame.height - screen.safeAreaInsets.top)
+        } else {
+            points = window.contentLayoutRect.size
+        }
         return DisplayConfiguration.fitting(points: points, backingScale: screen.backingScaleFactor, retina: retina)
-    }
-
-    /// In a window: give it kirki's screen's shape, as big as fits where it is, and keep that shape
-    /// when it's resized.
-    func fitWindow(to display: DisplayConfiguration) {
-        guard mode == .window else { return }
-        let aspect = NSSize(width: display.width, height: display.height)
-        window.contentAspectRatio = aspect
-        guard !window.styleMask.contains(.fullScreen) else { return }
-        let visible = (window.screen ?? Self.mainScreen).visibleFrame
-        let current = window.contentLayoutRect.size
-        let chrome = window.frame.height - current.height        // the title bar
-        let maxW = min(max(current.width, 640), visible.width)
-        let maxH = min(max(current.height, 400), visible.height - chrome)
-        let k = min(maxW / aspect.width, maxH / aspect.height)
-        let size = NSSize(width: (aspect.width * k).rounded(), height: (aspect.height * k).rounded())
-        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
-        frame.origin.x = min(max(window.frame.minX, visible.minX), visible.maxX - frame.width)
-        frame.origin.y = min(max(window.frame.maxY - frame.height, visible.minY), visible.maxY - frame.height)
-        window.setFrame(frame, display: true, animate: false)
     }
 
     /// The kirki login: displays were added, removed or changed. Cover the main screen again.

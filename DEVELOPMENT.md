@@ -68,7 +68,7 @@ account has its own kirki, in `~/Library/Application Support/kirki`.
 | EFI (`VZEFIBootLoader`) | boots GRUB from the disk's EFI partition, so kernel updates in kirki just work |
 | virtio block, `.automatic` caching, `.fsync` | the disk: `vm/disk.img`, a sparse raw file |
 | virtio net, NAT | the Mac's own connection; a fixed MAC address per VM |
-| virtio GPU, one scanout | the screen at the Mac's resolution (Retina: full pixels, kirki scales 2x), the whole screen's size even in a window (the window keeps its shape; the view scales). Not resized while running: the setup window doesn't follow, and its bottom was cut off |
+| virtio GPU, one scanout | the screen at the Mac's resolution (Retina: full pixels, kirki scales 2x); `automaticallyReconfiguresDisplay` |
 | USB keyboard, USB absolute pointer | no mouse capture: the pointer moves freely in and out |
 | virtio sound, in and out | the Mac's speakers, headphones and microphone |
 | virtio console (hvc0) | kirki's kernel log → `~/Library/Logs/kirki/console.log` |
