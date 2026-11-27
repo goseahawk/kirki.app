@@ -34,7 +34,7 @@ in `DEVELOPMENT.md`; read that before changing anything.
 - **Versions** are `YY.MM.DD` or `YY.MM.DD.N`; release tags are the bare version. A published release
   reaches every new install (install.sh follows "latest") and every installed VM (kirk-update runs its
   `apply-to-installed.sh`). Test with "Just build" or a draft first.
-- A release needs `install.sh`, `kirki-app.zip` + `.sha256`, `kirki-vm.json` and the image part(s).
+- A release needs `install.sh`, `uninstall.sh`, `kirki-app.zip` + `.sha256`, `kirki-vm.json` and the image part(s).
   Each file must stay under 2 GiB (`image/build.sh` splits the image).
 - The app targets macOS 14+ and Apple silicon only. Keep `swift test` passing; the App workflow builds
   and tests on every push. There's no Mac here: the CI runner is the compiler.

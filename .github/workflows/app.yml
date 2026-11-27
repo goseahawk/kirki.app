@@ -4,7 +4,7 @@ name: App
 
 on:
   push:
-    paths: ["app/**", "image/**", "tests/**", "install.sh", "apply-to-installed.sh", ".github/workflows/app.yml"]
+    paths: ["app/**", "image/**", "tests/**", "install.sh", "uninstall.sh", "apply-to-installed.sh", ".github/workflows/app.yml"]
   pull_request:
   workflow_dispatch:
 
@@ -55,7 +55,7 @@ jobs:
             image/vm-overlay/usr/src/virtio-snd-1/fetch-source.sh
           shellcheck -s sh image/vm-overlay/usr/lib/systemd/system-shutdown/kirk-vm-power \
             image/vm-overlay/usr/local/bin/kirk-about-model
-          if [ -f install.sh ]; then shellcheck -s sh install.sh && sh -n install.sh; fi
+          shellcheck -s sh install.sh uninstall.sh && sh -n install.sh && sh -n uninstall.sh
           python3 -m py_compile image/test-boot.py app/tools/make-assets.py
           for f in app/Resources/*.plist app/Resources/*.entitlements; do python3 -c "import plistlib,sys; plistlib.load(open(sys.argv[1],'rb'))" "$f"; done
           echo "All scripts check out."

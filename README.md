@@ -113,9 +113,10 @@ app, `console.log` is kirki's own start-up messages.
 
 **I want to remove kirki.** In Terminal, in your own account:
 
-    curl -fsSL https://github.com/goseahawk/kirki.app/releases/latest/download/install.sh | KIRKI_UNINSTALL=yes sh
+    curl -fsSL https://github.com/goseahawk/kirki.app/releases/latest/download/uninstall.sh | sh
 
-That removes the kirki login (with everything in kirki) and the app.
+That removes kirki completely: the app, the kirki login (with everything in kirki), and the copy in
+your own account if you ran kirki in a window. Run the install command again to start from scratch.
 
 ## Building it yourself
 

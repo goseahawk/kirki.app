@@ -12,7 +12,8 @@
 # Options (as environment variables, since the script arrives through a pipe):
 #   KIRKI_LOGIN=no       only install (or update) the app; no kirki login. The app then runs kirki
 #                        in a window, in your own account.
-#   KIRKI_UNINSTALL=yes  remove the kirki login (and kirki with everything in it) and the app
+#   KIRKI_UNINSTALL=yes  remove kirki completely: the app, the kirki login (and kirki with everything
+#                        in it) and your own account's copy, if you ran it in a window
 #   KIRKI_APP_ZIP=FILE   install this kirki-app.zip instead of downloading the newest (for testing)
 #   KIRKI_RELEASE=URL    where to download from (default: the newest release on GitHub)
 #
@@ -281,9 +282,10 @@ finish_message() {
 
 uninstall() {
     say ""
-    say "This removes the kirki app and the kirki login, with kirki and everything in it: its files,"
-    say "apps and settings. (If you also ran kirki in a window in other accounts, their copies stay;"
-    say "remove ~/Library/Application Support/kirki in those accounts to delete them.)"
+    say "This removes kirki from this Mac completely: the kirki app, the kirki login with kirki and"
+    say "everything in it (its files, apps and settings), and the copy of kirki in your own account"
+    say "($(id -un)), if you ran it in a window. Other accounts' copies stay (to delete one, remove"
+    say "Library/Application Support/kirki in that account's home folder)."
     ask "Type REMOVE to go ahead: "
     [ "$REPLY" = REMOVE ] || die "Nothing was removed."
     admin_password
@@ -291,13 +293,31 @@ uninstall() {
         if [ "$(stat -f %Su /dev/console 2>/dev/null)" = "$ACCOUNT" ]; then
             die "The kirki login is in use. Log out of it first, then run this again."
         fi
+        home=$(account_home)
         sudo sysadminctl -deleteUser "$ACCOUNT" -adminUser "$ME" -adminPassword "$ADMIN_PW" >/dev/null 2>&1 \
             || sudo sysadminctl -deleteUser "$ACCOUNT" >/dev/null 2>&1
         account_exists && die "macOS didn't remove the kirki login. Remove it in System Settings > Users & Groups."
+        # sysadminctl deletes the home folder too; make sure (kirki's disk alone is many GB)
+        case $home in
+            /Users/"$ACCOUNT") [ -d "$home" ] && sudo rm -rf "$home" ;;
+        esac
         say "Removed the kirki login."
     fi
+    # kirki in a window in this account: quit it (that shuts kirki down), then remove its files
+    if pgrep -xu "$(id -u)" kirki >/dev/null 2>&1; then
+        say "Shutting down kirki in this account..."
+        osascript -e 'tell application id "io.github.goseahawk.kirki" to quit' >/dev/null 2>&1 || true
+        n=0
+        while pgrep -xu "$(id -u)" kirki >/dev/null 2>&1 && [ $n -lt 60 ]; do sleep 1; n=$((n + 1)); done
+        pkill -9 -xu "$(id -u)" kirki 2>/dev/null || true
+    fi
+    rm -rf "$HOME/Library/Application Support/kirki" "$HOME/Library/Logs/kirki" \
+        "$HOME/Library/Caches/io.github.goseahawk.kirki" \
+        "$HOME/Library/Saved Application State/io.github.goseahawk.kirki.savedState"
+    defaults delete io.github.goseahawk.kirki >/dev/null 2>&1 || true
+    rm -f "$HOME/Library/Preferences/io.github.goseahawk.kirki.plist"
     sudo rm -rf "$APP" "$PICTURES"
-    say "Removed the kirki app. kirki is uninstalled."
+    say "Removed the kirki app. kirki is uninstalled; run the install command to start again."
 }
 
 main "$@"

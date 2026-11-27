@@ -223,7 +223,7 @@ jobs:
           APP: ${{ inputs.app }}
         run: |
           mkdir -p out
-          cp install.sh out/
+          cp install.sh uninstall.sh out/
           if [[ $APP == Use* ]]; then
             gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" --pattern 'kirki-app.zip*' --dir out
             if [[ -f out/kirki-app.zip.sha256 ]]; then

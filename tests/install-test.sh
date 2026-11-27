@@ -64,6 +64,8 @@ mock createhomedir 'exit 0'
 mock stty 'exit 0'
 mock stat 'echo tester'
 mock osascript 'echo "osascript $*" >> "$T/log"'
+mock pgrep 'exit 1'
+mock pkill 'exit 1'
 
 # ---- a release: kirki-app.zip with what install.sh looks at ----
 mkdir -p "$T/build/kirki.app/Contents/MacOS" "$T/build/kirki.app/Contents/Resources"
@@ -132,11 +134,14 @@ check "grep -q 'Open kirki from your Applications folder' '$T/out'" "says to ope
 
 echo "== uninstall"
 run "" "adminpw" "kpw" "kpw" "n" >/dev/null
+mkdir -p "$T/me/Library/Application Support/kirki/vm" "$T/me/Library/Logs/kirki" "$T/me/Documents"
 export KIRKI_UNINSTALL=yes
-run "REMOVE" "adminpw"
+HOME="$T/me" run "REMOVE" "adminpw"
 rc=$?
 unset KIRKI_UNINSTALL
 check "[ $rc -eq 0 ]" "exits 0"
+check "[ ! -e '$T/me/Library/Application Support/kirki' ] && [ ! -e '$T/me/Library/Logs/kirki' ]" "your own account's copy of kirki is removed"
+check "[ -d '$T/me/Documents' ]" "nothing else in your account is touched"
 check "grep -q 'sysadminctl -deleteUser kirki' '$T/log'" "the account is deleted"
 check "[ ! -e '$T/Applications/kirki.app' ]" "the app is removed"
 export KIRKI_UNINSTALL=yes
