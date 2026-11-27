@@ -73,16 +73,15 @@ final class WindowController: NSObject, NSWindowDelegate {
         place(statusView, belowNotch: false)
     }
 
-    func showVM(_ vm: VZVirtualMachine, display: DisplayConfiguration, capturesSystemKeys: Bool) {
+    func showVM(_ vm: VZVirtualMachine, capturesSystemKeys: Bool) {
         let view = VZVirtualMachineView()
         view.virtualMachine = vm
         view.capturesSystemKeys = capturesSystemKeys
-        // kirki's screen keeps the size it started with, and the view scales it, keeping its shape.
-        // Changing it underneath kirki isn't followed (the setup window and the desktop kept the old
-        // size), and the bottom was cut off.
+        // kirki's screen keeps the size it started with; the view scales it (a window keeps its shape).
+        // Changing it underneath kirki isn't followed by the setup window, so its bottom was cut off.
         view.automaticallyReconfiguresDisplay = false
         vmView = view
-        place(view, belowNotch: mode == .session, aspect: Double(display.width) / Double(display.height))
+        place(view, belowNotch: mode == .session)
         window.makeFirstResponder(view)
     }
 
@@ -124,50 +123,22 @@ final class WindowController: NSObject, NSWindowDelegate {
     func screensChanged() {
         guard mode == .session else { return }
         let screen = Self.mainScreen
-        Log.info("Screens changed: covering \(Int(screen.frame.width))x\(Int(screen.frame.height)) at \(screen.backingScaleFactor)x")
         window.setFrame(screen.frame, display: true)
         topInset?.constant = screen.safeAreaInsets.top
     }
 
-    /// Fills the window with `view` (below the notch, if asked). With `aspect` (kirki's screen), the
-    /// view keeps that shape, as big as fits and centred: if the Mac's screen changed after kirki
-    /// started, there are black bars at the sides or top and bottom, and nothing is cut off.
-    private func place(_ view: NSView, belowNotch: Bool, aspect: Double? = nil) {
+    private func place(_ view: NSView, belowNotch: Bool) {
         container.subviews.forEach { $0.removeFromSuperview() }
-        container.layoutGuides.forEach { container.removeLayoutGuide($0) }
         view.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(view)
-        let area = NSLayoutGuide()
-        container.addLayoutGuide(area)
         let inset = belowNotch ? Self.mainScreen.safeAreaInsets.top : 0
-        let top = area.topAnchor.constraint(equalTo: container.topAnchor, constant: inset)
+        let top = view.topAnchor.constraint(equalTo: container.topAnchor, constant: inset)
         topInset = belowNotch ? top : nil
         NSLayoutConstraint.activate([
             top,
-            area.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            area.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            area.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        guard let aspect else {
-            NSLayoutConstraint.activate([
-                view.topAnchor.constraint(equalTo: area.topAnchor),
-                view.leadingAnchor.constraint(equalTo: area.leadingAnchor),
-                view.trailingAnchor.constraint(equalTo: area.trailingAnchor),
-                view.bottomAnchor.constraint(equalTo: area.bottomAnchor),
-            ])
-            return
-        }
-        let fillWidth = view.widthAnchor.constraint(equalTo: area.widthAnchor)
-        let fillHeight = view.heightAnchor.constraint(equalTo: area.heightAnchor)
-        fillWidth.priority = .defaultHigh
-        fillHeight.priority = .defaultHigh
-        NSLayoutConstraint.activate([
-            view.centerXAnchor.constraint(equalTo: area.centerXAnchor),
-            view.centerYAnchor.constraint(equalTo: area.centerYAnchor),
-            view.widthAnchor.constraint(lessThanOrEqualTo: area.widthAnchor),
-            view.heightAnchor.constraint(lessThanOrEqualTo: area.heightAnchor),
-            view.widthAnchor.constraint(equalTo: view.heightAnchor, multiplier: aspect),
-            fillWidth, fillHeight,
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
     }
 
