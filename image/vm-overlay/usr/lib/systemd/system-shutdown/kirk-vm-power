@@ -1,9 +1,0 @@
-#!/bin/sh
-# The last thing kirki does before it turns off: tells the kirki Mac app whether this is a restart (so
-# the app starts kirki again) or a shutdown. systemd-shutdown runs every program in this folder with
-# poweroff, reboot, halt or kexec, after everything else has stopped.
-p=/dev/virtio-ports/org.kirki.control
-[ -e "$p" ] || exit 0
-# shellcheck disable=SC2016  # the inner shell expands them
-timeout 2 sh -c 'printf "power %s\n" "$1" > "$2"' sh "$1" "$p" 2>/dev/null || true
-exit 0

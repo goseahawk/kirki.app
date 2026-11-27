@@ -1,6 +1,0 @@
-# In the kirki Mac app, the Mac locks the screen (with your Mac password or Touch ID), so kirki
-# doesn't lock it a second time. Lock it yourself any time with Meta+L; turn this back on in System
-# Settings > Screen Locking.
-[Daemon]
-Autolock=false
-LockOnResume=false

@@ -1,0 +1,4 @@
+#!/bin/sh
+# KInfoCenter extra info: what kirki runs on. MUST print exactly two lines. In kirki's container
+# image there's no computer of its own to name, so it says that instead.
+printf 'Model:\n%s\n' "kirki in a container ($(uname -m))"

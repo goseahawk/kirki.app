@@ -1,2 +1,0 @@
-# The kirki Mac app's connection: start kirk-vm-agent as soon as its port appears.
-SUBSYSTEM=="virtio-ports", ATTR{name}=="org.kirki.control", TAG+="systemd", ENV{SYSTEMD_WANTS}+="kirk-vm-agent.service"

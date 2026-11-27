@@ -1,0 +1,29 @@
+# Lints the scripts and tests install.sh / uninstall.sh against mocks, on every change. The kirki image
+# itself is built and tested by the Release workflow ("Just build" to try it without publishing).
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: |
+          sudo apt-get install -y -q shellcheck >/dev/null
+          shellcheck -s sh install.sh uninstall.sh webtop/root/usr/local/bin/kirk-about-model
+          shellcheck webtop/setup.sh webtop/test-image.sh tests/install-test.sh
+          sh -n install.sh && sh -n uninstall.sh
+          [ "$(tail -n 1 install.sh)" = 'main "$@"' ] && [ "$(tail -n 1 uninstall.sh)" = 'main "$@"' ]
+          grep -Eq '^[0-9a-f]{40}$' webtop/kirki.ref
+          echo "All scripts check out."
+      - name: Test install.sh and uninstall.sh (against mocks of the macOS and Docker commands)
+        run: bash tests/install-test.sh

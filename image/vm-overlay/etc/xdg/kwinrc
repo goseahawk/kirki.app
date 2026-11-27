@@ -1,6 +1,0 @@
-# In the kirki Mac app, kirki draws with the CPU (the virtual screen has no 3D), and blurring what's
-# behind panels and menus is the most expensive part of that. Without it, Plasma's panels are simply
-# opaque and the desktop stays quick. Turn blur back on in System Settings > Desktop Effects.
-[Plugins]
-blurEnabled=false
-contrastEnabled=false

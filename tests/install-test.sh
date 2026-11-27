@@ -1,170 +1,134 @@
 #!/bin/bash
-# Tests install.sh on Linux, against mocks of the macOS commands it uses (sysadminctl, dscl, sudo,
-# curl, ditto, defaults, ...), with its absolute paths moved into a temporary folder and the keyboard
-# fed from a list of answers. Nothing on this computer is changed.
-#
-#     tests/install-test.sh
-#
-# What it can't show: how the real macOS commands behave. That needs a Mac.
-set -uo pipefail
+# shellcheck disable=SC2016  # the mocks are single-quoted on purpose: they expand when they run
+# Tests install.sh and uninstall.sh on Linux, against mocks of the macOS and Docker commands they use.
+#     bash tests/install-test.sh
+set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
-trap 'exec 7>&- 2>/dev/null; rm -rf "$T"' EXIT
-export T
-PASS=0 FAIL=0
-ok() { PASS=$((PASS + 1)); echo "  ok: $*"; }
-bad() { FAIL=$((FAIL + 1)); echo "  FAILED: $*"; }
-check() { if eval "$1"; then ok "$2"; else bad "$2"; fi; }
+trap 'rm -rf "$T"' EXIT
+pass=0; failed=0
+check() { if eval "$1"; then pass=$((pass + 1)); echo "  ok: $2"; else failed=$((failed + 1)); echo "  FAIL: $2"; sed 's/^/      | /' "$T/out"; fi; }
 
-mkdir -p "$T/bin" "$T/release" "$T/System/Library/CoreServices" "$T/Users/tester" "$T/Applications"
-touch "$T/System/Library/CoreServices/SystemVersion.plist"
-
-# ---- mocks ----
-mock() { printf '#!/bin/bash\n%s\n' "$2" > "$T/bin/$1"; chmod +x "$T/bin/$1"; }
-mock uname 'case $1 in -s) echo Darwin;; -m) echo arm64;; esac'
-mock sysctl 'echo "${MOCK_ARM64:-1}"'
-mock sw_vers 'case $1 in -productVersion) echo "${MOCK_MACOS:-15.2}";; -buildVersion) echo 24C101;; esac'
-mock id 'case "$*" in
-  -u) echo "${MOCK_UID:-501}";;
-  -un) echo tester;;
-  -Gn) echo "staff everyone admin";;
-  "-u kirki") [ -e "$T/kirki-account" ] && echo 502 || exit 1;;
-  *) exit 1;; esac'
-mock dscl 'echo "dscl $*" >> "$T/log"
-case "$*" in
-  ". -read /Users/kirki UniqueID") [ -e "$T/kirki-account" ];;
-  ". -read /Users/kirki NFSHomeDirectory") [ -e "$T/kirki-account" ] && echo "NFSHomeDirectory: $T/Users/kirki";;
-  ". -authonly tester "*) [ "$4" = adminpw ];;
-  *) exit 0;; esac'
-mock sudo 'case "$1" in
-  -S) read -r pw; [ "$pw" = adminpw ];;
-  -n) exit 0;;
-  *) "$@";; esac'
-mock sysadminctl 'echo "sysadminctl $*" >> "$T/log"
-case "$1" in
-  -addUser) touch "$T/kirki-account"; mkdir -p "$T/Users/kirki/Library";;
-  -secureTokenStatus) echo "Secure token is ENABLED for user kirki" >&2;;
-  -deleteUser) rm -rf "$T/kirki-account" "$T/Users/kirki";;
-esac'
-mock curl 'out=""; url=""; while [ $# -gt 0 ]; do case $1 in -o) out=$2; shift;; -*) ;; *) url=$1;; esac; shift; done
-[ "$url" = "file:///" ] && exit 0
-cp "$T/release/$(basename "$url")" "$out"'
-mock shasum 'sha256sum "$3"'
-mock ditto 'if [ "$1" = -x ]; then unzip -q "$3" -d "$4"; else cp -a "$1" "$2"; fi'
-mock codesign 'exit 0'
+mkdir -p "$T/bin" "$T/state"
+mock() { printf '#!/bin/sh\n%s\n' "$2" > "$T/bin/$1"; chmod +x "$T/bin/$1"; }
+mock uname 'echo Darwin'
+mock open 'echo "open $*" >> "$T/log"'
+mock readlink 'echo /var/db/timezone/zoneinfo/Europe/Berlin'
+mock curl 'echo 200'
+mock sleep 'exit 0'
+mock brew 'echo "brew $*" >> "$T/log"; exit 1'
+mock dscl 'exit 1'
 mock pgrep 'exit 1'
-mock xattr 'exit 0'
-mock chown 'echo "chown $*" >> "$T/log"'
-mock install 'mode=; dirs=no; args=(); while [ $# -gt 0 ]; do case $1 in -d) dirs=yes;; -o|-g) shift;; -m) mode=$2; shift;; *) args+=("$1");; esac; shift; done
-if [ $dirs = yes ]; then mkdir -p "${args[@]}"; else cp "${args[0]}" "${args[1]}"; fi'
-mock defaults 'echo "defaults $*" >> "$T/log"; [ "$1" = read ] && echo 26.11.26; exit 0'
-mock plutil 'python3 -c "import plistlib,sys; plistlib.load(open(sys.argv[1],\"rb\"))" "$2"'
-mock fdesetup 'echo "FileVault is On."'
-mock createhomedir 'exit 0'
-mock stty 'exit 0'
 mock stat 'echo tester'
-mock osascript 'echo "osascript $*" >> "$T/log"'
-mock pgrep 'exit 1'
-mock pkill 'exit 1'
+mock id 'case "$1" in -u) echo 501 ;; -un) echo tester ;; *) echo 501 ;; esac'
+# docker: "running" unless $T/state/stopped; containers and volumes are files in $T/state
+mock docker '
+echo "docker $*" >> "$T/log"
+S="$T/state"
+case $1 in
+  info) [ -e "$S/stopped" ] && exit 1; exit 0 ;;
+  pull) [ -e "$S/no-pull" ] && exit 1; touch "$S/image"; exit 0 ;;
+  container) [ -e "$S/container" ] ;;
+  rm) rm -f "$S/container"; exit 0 ;;
+  run) touch "$S/container" "$S/volume"; exit 0 ;;
+  volume) [ -e "$S/volume" ] || exit 1; rm -f "$S/volume" ;;
+  images) [ -e "$S/image" ] && echo "ghcr.io/goseahawk/kirki:latest@abc123"; exit 0 ;;
+  rmi) rm -f "$S/image" ;;
+  image) exit 0 ;;
+esac'
+for f in install.sh uninstall.sh; do
+  # (command -v docker: only the mock counts, not a real Docker on the test machine)
+  sed -e "s|export PATH=\"|export PATH=\"$T/bin:|" -e "s|/dev/tty|$T/tty|g" -e "s|command -v docker|command -v $T/bin/docker|" -e "s|\\\$T|$T|g" "$HERE/$f" > "$T/$f"
+done
+sed -i "s|\$T|$T|g" "$T"/bin/*
 
-# ---- a release: kirki-app.zip with what install.sh looks at ----
-mkdir -p "$T/build/kirki.app/Contents/MacOS" "$T/build/kirki.app/Contents/Resources"
-printf '#!/bin/sh\n' > "$T/build/kirki.app/Contents/MacOS/kirki"
-chmod +x "$T/build/kirki.app/Contents/MacOS/kirki"
-cp "$HERE/app/Resources/user-picture.png" "$T/build/kirki.app/Contents/Resources/"
-(cd "$T/build" && zip -q -r "$T/release/kirki-app.zip" kirki.app)
-(cd "$T/release" && sha256sum kirki-app.zip > kirki-app.zip.sha256)
-
-# ---- install.sh with its paths moved into $T ----
-sed -e "s|export PATH=\"|export PATH=\"$T/bin:|" \
-    -e "s|/System/Library/CoreServices/SystemVersion.plist|$T&|" \
-    -e "s|APP=/Applications/kirki.app|APP=$T/Applications/kirki.app|" \
-    -e "s|PICTURES=\"/Library/User Pictures/kirki\"|PICTURES=\"$T/Library/User Pictures/kirki\"|" \
-    -e "s|/dev/tty|$T/tty|g" \
-    "$HERE/install.sh" > "$T/install.sh"
-grep -q "$T/bin" "$T/install.sh" && grep -q "$T/tty" "$T/install.sh" || { echo "couldn't adapt install.sh"; exit 1; }
-
-# run ANSWERS... : runs the adapted install.sh with these keyboard answers; output in $T/out
+# run SCRIPT ANSWERS...: runs it as `curl ... | sh` would, with these keyboard answers
 run() {
-  rm -f "$T/tty" "$T/log"
+  local script=$1; shift
+  rm -f "$T/tty" "$T/log"; touch "$T/log"
+  # a FIFO kept open, so each read gets the next answer, as from a keyboard
   mkfifo "$T/tty"
   exec 7<>"$T/tty"
   printf '%s\n' "$@" >&7
-  # the script arrives through a pipe, as with curl | sh
-  sh < "$T/install.sh" > "$T/out" 2>&1
+  HOME="$T/home" sh < "$T/$script" > "$T/out" 2>&1
   local rc=$?
   exec 7>&-
   return $rc
 }
+mkdir -p "$T/home"
 
-echo "== fresh install, with the kirki login"
-run "" "wrongpw" "adminpw" "kpw" "typo" "kpw" "kpw" "n"
+echo "== fresh install"
+run install.sh ""
 rc=$?
 check "[ $rc -eq 0 ]" "exits 0"
-check "[ -x '$T/Applications/kirki.app/Contents/MacOS/kirki' ]" "the app is installed"
-check "grep -q \"That's not the password\" '$T/out'" "a wrong admin password is asked again"
-check "grep -q \"didn't match\" '$T/out'" "mismatched kirki passwords are asked again"
-check "grep -q 'sysadminctl -addUser kirki -fullName kirki -password kpw -picture .*kirki.png -adminUser tester -adminPassword adminpw' '$T/log'" "the account is made with a secure token"
-agent="$T/Users/kirki/Library/LaunchAgents/io.github.goseahawk.kirki.session.plist"
-check "[ -f '$agent' ]" "the launch agent is installed"
-check "python3 -c \"import plistlib; d=plistlib.load(open('$agent','rb')); assert d['ProgramArguments'][1]=='--session' and d['RunAtLoad'] and d['KeepAlive']=={'SuccessfulExit': False} and d['LimitLoadToSessionType']=='Aqua'\"" "the agent starts kirki full screen at login, again after a crash"
-check "grep -q 'com.apple.SetupAssistant DidSeeCloudSetup -bool true' '$T/log'" "new-account welcome screens are skipped"
-check "grep -q 'AppleInterfaceStyle -string Dark' '$T/log'" "the kirki login is dark"
-check "[ -f '$T/Library/User Pictures/kirki/kirki.png' ]" "the login picture is in place"
-check "grep -q 'offered when the Mac starts' '$T/out'" "FileVault: says the login is offered at startup"
-check "grep -q 'choose kirki in the login window' '$T/out'" "says how to start kirki"
+check "grep -q 'docker pull ghcr.io/goseahawk/kirki:latest' '$T/log'" "the image is downloaded"
+check "grep -q -- '-p 127.0.0.1:3010:3000' '$T/log'" "only this Mac can reach it, on port 3010"
+check "grep -q -- '-v kirki-home:/config' '$T/log'" "your files are kept in a volume"
+check "grep -q -- '--restart unless-stopped' '$T/log'" "it starts again with Docker Desktop"
+check "grep -q 'TZ=Europe/Berlin' '$T/log'" "kirki gets the Mac's time zone"
+check "grep -q 'open http://localhost:3010' '$T/log'" "the browser opens kirki"
 
 echo "== running it again: an update"
-run "" "adminpw" "n"
-rc=$?
-check "[ $rc -eq 0 ]" "exits 0"
-check "! grep -q 'sysadminctl -addUser' '$T/log'" "the account isn't made again"
-check "grep -q 'updates the kirki app' '$T/out'" "says it's an update"
-check "[ -f '$agent' ]" "the launch agent is still there"
+run install.sh ""
+check "grep -q 'docker rm -f kirki' '$T/log' && [ -e '$T/state/container' ]" "the old container is replaced"
+check "grep -q 'files in kirki are kept' '$T/out'" "it says your files are kept"
 
-echo "== app only (KIRKI_LOGIN=no)"
-rm -rf "$T/kirki-account" "$T/Users/kirki"
-export KIRKI_LOGIN=no
-run "" "adminpw"
+echo "== Docker Desktop not running"
+touch "$T/state/stopped"
+( sleep 0.3; rm -f "$T/state/stopped" ) &
+mock sleep 'command sleep 0.2'
+sed -i "s|command sleep|$(command -v sleep)|" "$T/bin/sleep"
+run install.sh ""
 rc=$?
-unset KIRKI_LOGIN
-check "[ $rc -eq 0 ]" "exits 0"
-check "! grep -q sysadminctl '$T/log'" "no account"
-check "grep -q 'Open kirki from your Applications folder' '$T/out'" "says to open the app"
+wait
+check "[ $rc -eq 0 ] && grep -q 'open -a Docker' '$T/log'" "Docker Desktop is started, then kirki"
+mock sleep 'exit 0'
+
+echo "== no Docker"
+mv "$T/bin/docker" "$T/bin/docker.off"
+run install.sh "" "n"
+rc=$?
+check "[ $rc -ne 0 ] && grep -q 'docker.com/products/docker-desktop' '$T/out'" "it says where to get Docker Desktop"
+check "grep -q 'brew' '$T/out' || ! grep -q 'brew install' '$T/log'" "Homebrew isn't used when you say no"
+mv "$T/bin/docker.off" "$T/bin/docker"
+
+echo "== a failed download"
+touch "$T/state/no-pull"
+run install.sh ""
+rc=$?
+rm -f "$T/state/no-pull"
+check "[ $rc -ne 0 ] && grep -q \"Couldn't download kirki\" '$T/out'" "it stops with a clear message"
+
+echo "== another port"
+KIRKI_PORT=4000 run install.sh ""
+check "grep -q -- '-p 127.0.0.1:4000:3000' '$T/log'" "KIRKI_PORT is used"
+KIRKI_PORT=abc run install.sh ""
+check "[ \$? -ne 0 ] && grep -q 'must be a number' '$T/out'" "a bad port is refused"
 
 echo "== uninstall"
-run "" "adminpw" "kpw" "kpw" "n" >/dev/null
-mkdir -p "$T/me/Library/Application Support/kirki/vm" "$T/me/Library/Logs/kirki" "$T/me/Documents"
-export KIRKI_UNINSTALL=yes
-HOME="$T/me" run "REMOVE" "adminpw"
+run install.sh ""
+run uninstall.sh "no thanks"
+check "[ \$? -ne 0 ] && [ -e '$T/state/container' ] && grep -q 'Nothing was removed' '$T/out'" "anything but REMOVE removes nothing"
+mkdir -p "$T/home/Documents"
+run uninstall.sh "REMOVE"
 rc=$?
-unset KIRKI_UNINSTALL
 check "[ $rc -eq 0 ]" "exits 0"
-check "[ ! -e '$T/me/Library/Application Support/kirki' ] && [ ! -e '$T/me/Library/Logs/kirki' ]" "your own account's copy of kirki is removed"
-check "[ -d '$T/me/Documents' ]" "nothing else in your account is touched"
-check "grep -q 'sysadminctl -deleteUser kirki' '$T/log'" "the account is deleted"
-check "[ ! -e '$T/Applications/kirki.app' ]" "the app is removed"
-export KIRKI_UNINSTALL=yes
-run "no thanks"
-rc=$?
-unset KIRKI_UNINSTALL
-check "[ $rc -ne 0 ] && grep -q 'Nothing was removed' '$T/out'" "anything but REMOVE removes nothing"
+check "[ ! -e '$T/state/container' ] && [ ! -e '$T/state/volume' ] && [ ! -e '$T/state/image' ]" "the container, volume and image are removed"
+check "! grep -q sudo '$T/log' && [ -d '$T/home/Documents' ]" "nothing else is touched"
 
-echo "== a damaged download"
-echo garbage >> "$T/release/kirki-app.zip"
-run "" "adminpw"
-rc=$?
-check "[ $rc -ne 0 ] && grep -q 'checksum' '$T/out'" "refuses it"
-(cd "$T/release" && sha256sum kirki-app.zip > kirki-app.zip.sha256)
+echo "== uninstall: the earlier VM version is cleaned up too"
+mkdir -p "$T/home/Library/Application Support/kirki/vm" "$T/home/Library/Logs/kirki"
+mock sudo 'echo "sudo $*" >> "$T/log"'
+sed -i "s|\$T|$T|g" "$T/bin/sudo"
+run uninstall.sh "REMOVE"
+check "[ ! -e '$T/home/Library/Application Support/kirki' ] && [ ! -e '$T/home/Library/Logs/kirki' ]" "the old copy in your account is removed"
 
-echo "== the wrong Mac"
-MOCK_ARM64=0 run ""
-check "[ $? -ne 0 ] && grep -q 'Intel processor' '$T/out'" "Intel Macs are told kirki needs Apple silicon"
-MOCK_MACOS=13.6 run ""
-check "[ $? -ne 0 ] && grep -q 'macOS 14' '$T/out'" "macOS 13 is told to update"
-MOCK_UID=0 run ""
-check "[ $? -ne 0 ] && grep -q 'without sudo' '$T/out'" "running as root is refused"
+echo "== truncation guard"
+rm -f "$T/log"; touch "$T/log"
+head -n 60 "$T/install.sh" > "$T/cut.sh"
+HOME="$T/home" sh < "$T/cut.sh" > "$T/out" 2>&1
+check "[ ! -s '$T/log' ] && ! grep -q 'kirki for Mac' '$T/out'" "a cut-off script does nothing"
 
 echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+echo "$pass passed, $failed failed"
+[ $failed -eq 0 ]
